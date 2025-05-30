@@ -1,7 +1,9 @@
-package com.example.lms_backend.config; 
+package com.example.lms_backend.config; // Or your chosen package for configuration
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration; // Import this
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -28,6 +30,19 @@ public class SecurityConfig {
     }
 
     /**
+     * Exposes the AuthenticationManager as a Spring bean.
+     * This manager is responsible for authenticating users.
+     *
+     * @param authenticationConfiguration The configuration from which to get the AuthenticationManager.
+     * @return The AuthenticationManager bean.
+     * @throws Exception If an error occurs while obtaining the AuthenticationManager.
+     */
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+        return authenticationConfiguration.getAuthenticationManager();
+    }
+
+    /**
      * Configures the security filter chain that applies to all HTTP requests.
      * @param http HttpSecurity to configure
      * @return the configured SecurityFilterChain
@@ -37,11 +52,9 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             // Disable CSRF (Cross-Site Request Forgery) protection.
-            // CSRF is less relevant for stateless REST APIs where authentication is done via tokens (like JWT).
             .csrf(csrf -> csrf.disable())
 
             // Configure session management to be stateless.
-            // This means the server will not create or use HTTP sessions; each request must be authenticated independently (e.g., with a JWT).
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
             // Define authorization rules for HTTP requests.
