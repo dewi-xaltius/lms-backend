@@ -1,27 +1,46 @@
-package com.example.lms_backend.config; // Or your chosen package for configuration
+package com.example.lms_backend.config;
 
+import com.example.lms_backend.security.jwt.AuthEntryPointJwt;
+import com.example.lms_backend.security.jwt.AuthTokenFilter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration; // Import this
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * Spring Security configuration class.
- * This class defines how security is handled for HTTP requests.
+ * This class defines how security is handled for HTTP requests,
+ * including JWT authentication and authorization.
  */
-@Configuration // Indicates that this class contains Spring configuration beans
-@EnableWebSecurity // Enables Spring Security's web security support
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity // Enables method-level security (e.g., @PreAuthorize)
 public class SecurityConfig {
+
+    @Autowired
+    private AuthEntryPointJwt unauthorizedHandler; // Your custom authentication entry point
+
+    /**
+     * Bean definition for AuthTokenFilter.
+     * This filter will process JWTs in incoming requests.
+     * @return AuthTokenFilter instance
+     */
+    @Bean
+    public AuthTokenFilter authenticationJwtTokenFilter() {
+        return new AuthTokenFilter();
+    }
 
     /**
      * Defines a PasswordEncoder bean that uses BCrypt hashing.
-     * This will be used to hash passwords before storing them and to verify passwords during login.
      * @return a BCryptPasswordEncoder instance
      */
     @Bean
@@ -31,8 +50,6 @@ public class SecurityConfig {
 
     /**
      * Exposes the AuthenticationManager as a Spring bean.
-     * This manager is responsible for authenticating users.
-     *
      * @param authenticationConfiguration The configuration from which to get the AuthenticationManager.
      * @return The AuthenticationManager bean.
      * @throws Exception If an error occurs while obtaining the AuthenticationManager.
@@ -51,20 +68,17 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            // Disable CSRF (Cross-Site Request Forgery) protection.
-            .csrf(csrf -> csrf.disable())
-
-            // Configure session management to be stateless.
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-            // Define authorization rules for HTTP requests.
+            .csrf(csrf -> csrf.disable()) // Disable CSRF as we are using JWTs (stateless)
+            .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler)) // Set custom entry point for auth failures
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // Ensure stateless sessions
             .authorizeHttpRequests(authorize -> authorize
-                // Permit all requests to '/api/auth/**' (e.g., for login, registration endpoints that we will create).
-                .requestMatchers("/api/auth/**").permitAll()
-                // Any other request must be authenticated.
-                .anyRequest().authenticated()
+                .requestMatchers("/api/auth/**").permitAll() // Allow all requests to /api/auth/**
+                // .requestMatchers("/api/test/**").permitAll() // Example: if you have public test endpoints
+                .anyRequest().authenticated() // All other requests must be authenticated
             );
-            // More configurations like adding JWT filter will be added here later.
+
+        // Add our custom JWT token filter before the UsernamePasswordAuthenticationFilter
+        http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
