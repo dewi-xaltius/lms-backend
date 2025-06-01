@@ -5,6 +5,7 @@ import com.example.lms_backend.security.jwt.AuthTokenFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -15,69 +16,68 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Spring Security configuration class.
- * This class defines how security is handled for HTTP requests,
- * including JWT authentication and authorization.
  */
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity // Enables method-level security (e.g., @PreAuthorize)
+@EnableMethodSecurity
 public class SecurityConfig {
 
     @Autowired
-    private AuthEntryPointJwt unauthorizedHandler; // Your custom authentication entry point
+    private AuthEntryPointJwt unauthorizedHandler;
 
-    /**
-     * Bean definition for AuthTokenFilter.
-     * This filter will process JWTs in incoming requests.
-     * @return AuthTokenFilter instance
-     */
     @Bean
     public AuthTokenFilter authenticationJwtTokenFilter() {
         return new AuthTokenFilter();
     }
 
-    /**
-     * Defines a PasswordEncoder bean that uses BCrypt hashing.
-     * @return a BCryptPasswordEncoder instance
-     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    /**
-     * Exposes the AuthenticationManager as a Spring bean.
-     * @param authenticationConfiguration The configuration from which to get the AuthenticationManager.
-     * @return The AuthenticationManager bean.
-     * @throws Exception If an error occurs while obtaining the AuthenticationManager.
-     */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
-    /**
-     * Configures the security filter chain that applies to all HTTP requests.
-     * @param http HttpSecurity to configure
-     * @return the configured SecurityFilterChain
-     * @throws Exception if an error occurs during configuration
-     */
+    // Bean for global CORS configuration
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(List.of("http://localhost:5173")); // Your frontend origin
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "accept", "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"));
+        configuration.setExposedHeaders(Arrays.asList("Access-Control-Allow-Origin", "Access-Control-Allow-Credentials"));
+        configuration.setAllowCredentials(true); // Important if you plan to use cookies/sessions or need credentials
+        configuration.setMaxAge(3600L); // Max age of the preflight request
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration); // Apply this configuration to all paths
+        return source;
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable()) // Disable CSRF as we are using JWTs (stateless)
-            .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler)) // Set custom entry point for auth failures
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // Ensure stateless sessions
+            .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Apply global CORS configuration
+            .csrf(csrf -> csrf.disable())
+            .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers("/api/auth/**").permitAll() // Allow all requests to /api/auth/**
-                // .requestMatchers("/api/test/**").permitAll() // Example: if you have public test endpoints
-                .anyRequest().authenticated() // All other requests must be authenticated
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // Still good to explicitly permit OPTIONS
+                .requestMatchers("/api/auth/**").permitAll()
+                .anyRequest().authenticated()
             );
 
-        // Add our custom JWT token filter before the UsernamePasswordAuthenticationFilter
         http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
