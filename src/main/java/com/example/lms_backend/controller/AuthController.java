@@ -1,7 +1,7 @@
 package com.example.lms_backend.controller;
 
-import com.example.lms_backend.entity.Role;
-import com.example.lms_backend.entity.User;
+import com.example.lms_backend.entity.Role; // Assuming Role is in .entity package
+import com.example.lms_backend.entity.User; // Assuming User is in .entity package
 import com.example.lms_backend.payload.request.LoginRequest;
 import com.example.lms_backend.payload.request.SignupRequest;
 import com.example.lms_backend.payload.response.JwtResponse;
@@ -28,9 +28,9 @@ import java.util.stream.Collectors;
 /**
  * Controller for handling authentication requests like login and registration.
  */
-@CrossOrigin(origins = "*", maxAge = 3600) // Allows cross-origin requests, useful for development
+@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
-@RequestMapping("/api/auth") // Base path for all endpoints in this controller
+@RequestMapping("/api/auth")
 public class AuthController {
 
     @Autowired
@@ -55,34 +55,28 @@ public class AuthController {
     @PostMapping("/signin")
     public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest loginRequest) {
 
-        // Authenticate the user with username and password
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(loginRequest.username(), loginRequest.password()));
 
-        // Set the authentication object in the SecurityContext
         SecurityContextHolder.getContext().setAuthentication(authentication);
-        // Generate JWT token
         String jwt = jwtUtils.generateJwtToken(authentication);
 
-        // Get UserDetails from the authentication object
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-        // Get user roles
         List<String> roles = userDetails.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
 
-        // Retrieve the full User entity to get the ID and email
-        // Note: UserDetails typically only has username, password, authorities.
-        // We need to fetch the User entity from the database for more details.
+        // Retrieve the full User entity to get ID, email, firstName, and lastName
         User user = userRepository.findByUsername(userDetails.getUsername())
-            .orElseThrow(() -> new RuntimeException("Error: User not found after authentication."));
+                .orElseThrow(() -> new RuntimeException("Error: User not found after authentication. This should not happen."));
 
-
-        // Return the JWT and user details in the response
+        // Return the JWT and updated user details in the response
         return ResponseEntity.ok(new JwtResponse(jwt,
                 user.getId(),
-                userDetails.getUsername(),
-                user.getEmail(), // Assuming User entity has getEmail()
+                user.getUsername(), // Or userDetails.getUsername() - should be the same
+                user.getFirstName(), // Get firstName from User entity
+                user.getLastName(),  // Get lastName from User entity
+                user.getEmail(),
                 roles));
     }
 
@@ -95,53 +89,48 @@ public class AuthController {
      */
     @PostMapping("/signup")
     public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
-        // Check if username is already taken
         if (userRepository.existsByUsername(signUpRequest.username())) {
             return ResponseEntity
                     .badRequest()
                     .body(new MessageResponse("Error: Username is already taken!"));
         }
 
-        // Check if email is already taken
         if (userRepository.existsByEmail(signUpRequest.email())) {
             return ResponseEntity
                     .badRequest()
                     .body(new MessageResponse("Error: Email is already in use!"));
         }
 
-        // Create new user's account
         User user = new User(
                 signUpRequest.firstName(),
                 signUpRequest.lastName(),
                 signUpRequest.username(),
                 signUpRequest.email(),
-                encoder.encode(signUpRequest.password()) // Encode the password
+                encoder.encode(signUpRequest.password())
         );
 
         Set<String> strRoles = signUpRequest.roles();
-        Set<Role> roles = new HashSet<>();
+        Set<Role> domainRoles = new HashSet<>(); // Renamed to avoid conflict with 'roles' list from signin
 
         if (strRoles == null || strRoles.isEmpty()) {
-            // Default role if none provided
-            roles.add(Role.ROLE_MEMBER);
+            domainRoles.add(Role.ROLE_MEMBER);
         } else {
             strRoles.forEach(role -> {
                 switch (role.toLowerCase()) {
                     case "librarian":
-                    case "admin": // Alias for librarian
-                        roles.add(Role.ROLE_LIBRARIAN);
+                    case "admin":
+                        domainRoles.add(Role.ROLE_LIBRARIAN);
                         break;
                     case "member":
-                        roles.add(Role.ROLE_MEMBER);
+                        domainRoles.add(Role.ROLE_MEMBER);
                         break;
                     default:
-                        // You might want to throw an exception or assign a default role for unknown roles
-                        System.out.println("Warning: Unknown role '" + role + "' specified. Assigning default MEMBER role.");
-                        roles.add(Role.ROLE_MEMBER);
+                        System.out.println("Warning: Unknown role '" + role + "' specified during signup. Assigning default MEMBER role.");
+                        domainRoles.add(Role.ROLE_MEMBER);
                 }
             });
         }
-        user.setRoles(roles);
+        user.setRoles(domainRoles);
         userRepository.save(user);
 
         return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
